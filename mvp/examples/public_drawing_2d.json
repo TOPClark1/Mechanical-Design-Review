@@ -1,0 +1,18 @@
+{
+  "part_id": "PUBLIC_BRACKET_A",
+  "unit": "mm",
+  "standard_notes": {
+    "general_tolerance_standard": "ISO 2768-1",
+    "general_tolerance_class": "m",
+    "hole_standard": "ISO 273 normal"
+  },
+  "holes": [
+    {"id": "H_M8_1", "diameter_mm": 9.0, "intended_fastener": "M8", "explicit_tolerance_mm": 0.1},
+    {"id": "H_M8_2", "diameter_mm": 9.0, "intended_fastener": "M8", "explicit_tolerance_mm": 0.1}
+  ],
+  "linear_dims": [
+    {"id": "LENGTH", "nominal_mm": 80.0, "explicit_tolerance_mm": 0.2},
+    {"id": "WIDTH", "nominal_mm": 40.0},
+    {"id": "THICKNESS", "nominal_mm": 8.0}
+  ]
+}

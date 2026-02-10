@@ -1,0 +1,28 @@
+{
+  "profile_id": "ISO_PUBLIC_MECH_REVIEW_V1",
+  "description": "Public baseline profile using ISO 2768-1 (general tolerances, class m) and ISO 273 (clearance holes, normal series).",
+  "sources": [
+    "ISO 2768-1: General tolerances for linear dimensions (class m)",
+    "ISO 273: Clearance holes for metric bolts (normal series)"
+  ],
+  "iso_2768_m_linear_tolerance_mm": [
+    {"range_gt": 0, "range_le": 3, "tol": 0.1},
+    {"range_gt": 3, "range_le": 6, "tol": 0.1},
+    {"range_gt": 6, "range_le": 30, "tol": 0.2},
+    {"range_gt": 30, "range_le": 120, "tol": 0.3},
+    {"range_gt": 120, "range_le": 400, "tol": 0.5}
+  ],
+  "iso_273_normal_clearance_mm": {
+    "M3": 3.4,
+    "M4": 4.5,
+    "M5": 5.5,
+    "M6": 6.6,
+    "M8": 9.0,
+    "M10": 11.0,
+    "M12": 13.5
+  },
+  "dfm_thresholds": {
+    "hole_depth_ratio_max": 8.0,
+    "min_wall_thickness_mm": 2.0
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "part_id": "PUBLIC_BRACKET_A",
+  "unit": "mm",
+  "material": "S235JR",
+  "geometry": {
+    "min_wall_thickness_mm": 2.5,
+    "holes": [
+      {"id": "H_M8_1", "diameter_mm": 8.6, "depth_mm": 8.0, "intended_fastener": "M8"},
+      {"id": "H_M8_2", "diameter_mm": 9.0, "depth_mm": 8.0, "intended_fastener": "M8"}
+    ],
+    "linear_dims": [
+      {"id": "LENGTH", "value_mm": 80.0},
+      {"id": "WIDTH", "value_mm": 40.0},
+      {"id": "THICKNESS", "value_mm": 8.0}
+    ],
+    "features": [
+      {"type": "decorative_chamfer", "count": 2}
+    ]
+  },
+  "constraints": {
+    "load_level": "medium",
+    "corrosion_env": false,
+    "annual_volume": 5000
+  }
+}

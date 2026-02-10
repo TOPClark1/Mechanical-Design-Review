@@ -1,0 +1,19 @@
+{
+  "part_id": "BRACKET-001",
+  "material": "45#",
+  "geometry": {
+    "min_wall_thickness_mm": 1.8,
+    "holes": [
+      {"id": "H1", "diameter_mm": 4.0, "depth_mm": 40.0, "thread": "M4"},
+      {"id": "H2", "diameter_mm": 8.0, "depth_mm": 16.0, "thread": null}
+    ],
+    "features": [
+      {"type": "decorative_chamfer", "count": 6}
+    ]
+  },
+  "constraints": {
+    "load_level": "medium",
+    "corrosion_env": false,
+    "annual_volume": 20000
+  }
+}
