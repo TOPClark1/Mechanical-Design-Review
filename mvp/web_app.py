@@ -9,6 +9,7 @@ import html
 import json
 import re
 import secrets
+import subprocess
 import socket
 import sqlite3
 from urllib.parse import parse_qs
@@ -267,7 +268,37 @@ def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
         return _load_json_bytes(raw)
     if ext == ".dxf":
         return parse_dxf_to_drawing(filename, raw)
-    raise ValueError("仅支持 JSON 或 DXF（当前不直接解析 PDF/DWG）")
+    raise ValueError("仅支持 JSON 或 DXF（PDF 请走下方‘二维 PDF 分析’）")
+
+
+
+
+def parse_pdf_to_drawing(filename: str, raw: bytes) -> dict[str, Any]:
+    try:
+        proc = subprocess.run(
+            ["pdftotext", "-layout", "-", "-"],
+            input=raw,
+            capture_output=True,
+            check=False,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("未安装 pdftotext（poppler），无法解析 PDF；请先安装或改传 DXF/JSON") from exc
+
+    if proc.returncode != 0:
+        msg = proc.stderr.decode("utf-8", errors="ignore").strip()
+        raise ValueError(f"PDF 解析失败: {msg or 'pdftotext 执行失败'}")
+
+    text = proc.stdout.decode("utf-8", errors="ignore")
+    linear_dims = _extract_dims_from_text(text)
+    if not linear_dims:
+        raise ValueError("PDF 中未提取到可用尺寸文本；建议先转 DXF 或结构化 JSON")
+
+    return {
+        "drawing_id": Path(filename).name,
+        "holes": [],
+        "linear_dims": linear_dims,
+        "standard_notes": {"general_tolerance_standard": "ISO 2768-1", "general_tolerance_class": "m"},
+    }
 
 
 def _build_part_from_drawing(drawing: dict[str, Any]) -> dict[str, Any]:
@@ -362,19 +393,27 @@ def _dashboard_page(
 <div><h1>零件评审助手（可分享 + 邮箱注册）</h1><p>2D图纸必填（JSON/DXF），3D可选。</p></div>
 <div class='inline'><code>{html.escape(user_email)}</code><form method='post' action='/logout'><button type='submit'>退出登录</button></form></div>
 </section>
-<section class='card tip'><strong>格式说明：</strong>2D 支持 .json/.dxf；.dwg/.pdf 先转换。若做真实邮箱验证码邮件发送，建议使用你自己的域名邮箱。</section>
+<section class='card tip'><strong>格式说明：</strong>2D 支持 .json/.dxf；新增“二维 PDF 分析（实验）”板块。若做真实邮箱验证码邮件发送，建议使用你自己的域名邮箱。</section>
 
 <section class='card'><h2>先转换：DXF → JSON（内置）</h2>
 <form method='post' action='/convert-dxf' enctype='multipart/form-data'>
 <label>上传 DXF</label><input type='file' name='dxf_file' accept='.dxf' required>
 <button type='submit'>转换为 JSON</button></form></section>
 
-<section class='card'><h2>评审分析</h2>
+<section class='card'><h2>评审分析（JSON/DXF）</h2>
 <form method='post' action='/analyze' enctype='multipart/form-data'>
 <label>2D图纸（必填，JSON或DXF）</label><input type='file' name='drawing_file' accept='application/json,.dxf' required>
 <label>3D结构化输入（可选，JSON）</label><input type='file' name='part_file' accept='application/json'>
 <label>标准配置（可选）</label><input type='file' name='profile_file' accept='application/json'>
 <button type='submit'>开始分析</button></form></section>
+
+<section class='card'><h2>二维 PDF 分析（实验）</h2>
+<form method='post' action='/analyze-pdf' enctype='multipart/form-data'>
+<label>2D PDF 图纸（必填）</label><input type='file' name='pdf_file' accept='application/pdf,.pdf' required>
+<label>3D结构化输入（可选，JSON）</label><input type='file' name='part_file' accept='application/json'>
+<label>标准配置（可选）</label><input type='file' name='profile_file' accept='application/json'>
+<button type='submit'>PDF 开始分析</button></form>
+<p><small>说明：该实验版通过文本提取做最小闭环，不适合复杂标注；建议优先 DXF/JSON。</small></p></section>
 
 {ok_html}{err_html}{convert_html}{result_html}
 </main></body></html>"""
@@ -448,7 +487,7 @@ class Handler(BaseHTTPRequestHandler):
             self._redirect("/login")
             return
 
-        if self.path not in {"/analyze", "/convert-dxf"}:
+        if self.path not in {"/analyze", "/analyze-pdf", "/convert-dxf"}:
             self._send_html("<h1>404</h1>", status=404)
             return
 
@@ -477,6 +516,49 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as exc:
                 errors.append(f"DXF 转换失败: {exc}")
             self._send_html(_dashboard_page(user["email"], errors=errors, converted_drawing=converted))
+            return
+
+        if self.path == "/analyze-pdf":
+            errors: list[str] = []
+            result: dict[str, Any] | None = None
+            report_md = ""
+
+            pdf_name, pdf_raw = get_file("pdf_file")
+            _, part_raw = get_file("part_file")
+            _, profile_raw = get_file("profile_file")
+
+            part = drawing = profile = None
+            try:
+                if not pdf_raw:
+                    raise ValueError("请上传 PDF 文件")
+                if Path(pdf_name).suffix.lower() != ".pdf":
+                    raise ValueError("请上传 .pdf 文件")
+                drawing = parse_pdf_to_drawing(pdf_name, pdf_raw)
+            except ValueError as exc:
+                errors.append(f"PDF 解析错误: {exc}")
+
+            try:
+                profile = _load_json_bytes(profile_raw) if profile_raw else json.loads(DEFAULT_PROFILE.read_text(encoding="utf-8"))
+            except (ValueError, FileNotFoundError) as exc:
+                errors.append(f"标准配置错误: {exc}")
+
+            if part_raw:
+                try:
+                    part = _load_json_bytes(part_raw)
+                except ValueError as exc:
+                    errors.append(f"3D 输入错误: {exc}")
+            elif drawing:
+                part = _build_part_from_drawing(drawing)
+
+            if part and drawing and profile:
+                hits = []
+                hits.extend(rule_dfm(part, profile))
+                hits.extend(rule_iso273_hole(part, drawing, profile))
+                hits.extend(rule_iso2768_linear(part, drawing, profile))
+                result = to_result(part, drawing, profile, hits)
+                report_md = render_markdown(result)
+
+            self._send_html(_dashboard_page(user["email"], errors=errors, result=result, report_md=report_md))
             return
 
         errors: list[str] = []
