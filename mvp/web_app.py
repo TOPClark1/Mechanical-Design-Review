@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import argparse
 import cgi
 import html
 import json
-from dataclasses import asdict
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from typing import Any
@@ -14,8 +15,8 @@ try:
 except ModuleNotFoundError:
     from mvp.min_loop import render_markdown, rule_dfm, rule_iso273_hole, rule_iso2768_linear, to_result
 
-HOST = "0.0.0.0"
-PORT = 8000
+DEFAULT_HOST = "127.0.0.1"
+DEFAULT_PORT = 8000
 DEFAULT_PROFILE = Path("mvp/standards/iso_profile_public.json")
 
 
@@ -24,6 +25,7 @@ body { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; backgro
 .container { max-width: 920px; margin:0 auto; }
 .card { background:#fff; border-radius:10px; padding:16px; margin-bottom:16px; box-shadow:0 1px 4px rgba(0,0,0,.08); }
 .error { border-left:4px solid #dc2626; }
+.tip { border-left:4px solid #2563eb; }
 form { display:grid; gap:10px; }
 button { width:140px; padding:10px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; }
 pre { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; }
@@ -93,6 +95,9 @@ def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None 
 <body><main class="container">
   <h1>零件评审助手（ISO 2768-1 / ISO 273）</h1>
   <p>上传 3D/2D 结构化图纸 JSON，分析后直接在网页显示评审建议。</p>
+  <section class="card tip">
+    <strong>访问方式：</strong>请用 <code>http://localhost:8000</code> 或 <code>http://127.0.0.1:8000</code>，<b>不要输入 mvp 这种主机名</b>。
+  </section>
   <section class="card">
     <form action="/analyze" method="post" enctype="multipart/form-data">
       <label>3D 结构化输入（必填）</label>
@@ -121,6 +126,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802
         if self.path == "/":
             self._send_html(_render_page())
+        elif self.path == "/health":
+            self._send_html("ok")
         else:
             self._send_html("<h1>404</h1>", status=404)
 
@@ -165,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
                 profile = _load_json_bytes(profile_raw)
             else:
                 profile = json.loads(DEFAULT_PROFILE.read_text(encoding="utf-8"))
-        except ValueError as exc:
+        except (ValueError, FileNotFoundError) as exc:
             errors.append(f"标准配置错误: {exc}")
 
         if part and drawing and profile:
@@ -179,9 +186,37 @@ class Handler(BaseHTTPRequestHandler):
         self._send_html(_render_page(errors=errors, result=result, report_md=report_md))
 
 
+def _guess_lan_ip() -> str:
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+    finally:
+        s.close()
+
+
 def main() -> None:
-    server = HTTPServer((HOST, PORT), Handler)
-    print(f"[OK] web app running: http://localhost:{PORT}")
+    parser = argparse.ArgumentParser(description="零件评审助手 Web")
+    parser.add_argument("--host", default=DEFAULT_HOST)
+    parser.add_argument("--port", type=int, default=DEFAULT_PORT)
+    args = parser.parse_args()
+
+    try:
+        server = HTTPServer((args.host, args.port), Handler)
+    except OSError as exc:
+        raise SystemExit(
+            f"[ERROR] 端口启动失败: {exc}\n"
+            f"建议改端口重试: python3 mvp/web_app.py --host {args.host} --port 8010"
+        )
+
+    lan_ip = _guess_lan_ip()
+    print("[OK] web app running")
+    print(f" - local: http://localhost:{args.port}")
+    if args.host == "0.0.0.0":
+        print(f" - lan:   http://{lan_ip}:{args.port}")
+    print("[TIP] 浏览器不要输入 mvp 作为网址，使用 localhost 或 127.0.0.1")
     server.serve_forever()
 
 

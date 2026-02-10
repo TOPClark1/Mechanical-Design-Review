@@ -41,15 +41,44 @@ python3 mvp/min_loop.py \
 python3 mvp/web_app.py
 ```
 
-启动后访问：
+启动后会打印访问地址，默认请用：
 - `http://localhost:8000`
+- `http://127.0.0.1:8000`
 
-在页面中上传：
-1. 3D 结构化 JSON（必填）
-2. 2D 结构化 JSON（必填）
-3. 标准配置 JSON（可选，不传则用内置 ISO 配置）
+如果你要让同网段其它机器访问：
+```bash
+python3 mvp/web_app.py --host 0.0.0.0 --port 8000
+```
+然后在其它机器访问 `http://你的局域网IP:8000`。
 
-点击“开始分析”后，网页会直接显示：
+---
+
+## 5) 你这个报错（DNS_PROBE_FINISHED_NXDOMAIN）怎么处理
+
+你截图里是访问了 `mvp`，这是一个不存在的域名，所以浏览器报 DNS 错误。
+
+### 正确做法
+1. 先在项目目录启动服务：
+   ```bash
+   python3 mvp/web_app.py
+   ```
+2. 浏览器输入：
+   - `http://localhost:8000`
+   - 或 `http://127.0.0.1:8000`
+3. **不要输入 `mvp`**。
+
+### 若仍打不开
+- 检查服务是否启动成功（终端应显示 `[OK] web app running`）。
+- 若提示端口占用，换端口启动：
+  ```bash
+  python3 mvp/web_app.py --port 8010
+  ```
+  然后访问 `http://localhost:8010`。
+- 若跨机器访问，确认防火墙已放行该端口。
+
+---
+
+## 6) 页面上传后会显示什么
 - 评分与等级
 - 问题清单（规则、严重度、建议、证据）
 - 推荐工艺路径
@@ -57,7 +86,7 @@ python3 mvp/web_app.py
 
 ---
 
-## 5) 当前规则
+## 7) 当前规则
 - `DFM-HOLE-001`：孔深径比
 - `DFM-WALL-001`：最小壁厚
 - `ISO273-HOLE-001`：孔径是否符合 ISO 273 normal
