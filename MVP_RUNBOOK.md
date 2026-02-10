@@ -68,3 +68,16 @@ python3 mvp/dxf_to_json.py \
 你可以把服务部署到云主机，并开放 8000 端口；别人用 `http://服务器IP:8000` 访问即可。
 
 如果你暂时没有域名，也可以先用 IP 分享。后续需要 HTTPS/正式邮件服务时，再加域名。
+
+
+---
+
+## 7) 合并冲突自检
+
+在提交或发起 PR 前，先运行：
+
+```bash
+./scripts/check_conflicts.sh
+```
+
+如果输出 `[OK] No unresolved conflict markers found in tracked files.`，说明类似你截图中的 `MVP_RUNBOOK.md` 和 `mvp/min_loop.py` 冲突标记已清理干净。
