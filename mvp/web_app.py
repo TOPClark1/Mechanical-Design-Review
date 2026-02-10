@@ -5,6 +5,7 @@ import argparse
 import cgi
 import html
 import json
+import re
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -40,6 +41,125 @@ def _load_json_bytes(raw: bytes) -> dict[str, Any]:
         return json.loads(raw.decode("utf-8"))
     except Exception as exc:  # noqa: BLE001
         raise ValueError(f"JSON 解析失败: {exc}") from exc
+
+
+def _parse_dxf_pairs(text: str) -> list[tuple[str, str]]:
+    lines = [ln.rstrip("\r") for ln in text.splitlines()]
+    pairs: list[tuple[str, str]] = []
+    i = 0
+    while i + 1 < len(lines):
+        pairs.append((lines[i].strip(), lines[i + 1].strip()))
+        i += 2
+    return pairs
+
+
+def _extract_dims_from_text(text: str) -> list[dict[str, Any]]:
+    dims: list[dict[str, Any]] = []
+    idx = 1
+    for line in text.splitlines():
+        for m in re.finditer(r"(?<![A-Za-z0-9])(\d+(?:\.\d+)?)\s*(?:±\s*(\d+(?:\.\d+)?))?", line):
+            nominal = float(m.group(1))
+            if nominal <= 0:
+                continue
+            dim: dict[str, Any] = {"id": f"TXT_DIM_{idx}", "nominal_mm": nominal}
+            if m.group(2):
+                dim["explicit_tolerance_mm"] = float(m.group(2))
+            dims.append(dim)
+            idx += 1
+    return dims
+
+
+def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
+    ext = Path(filename or "").suffix.lower()
+    if ext == ".json" or not ext:
+        return _load_json_bytes(raw)
+
+    if ext != ".dxf":
+        raise ValueError("仅支持 JSON 或 DXF（当前不直接解析 PDF/DWG）")
+
+    text = raw.decode("utf-8", errors="ignore")
+    pairs = _parse_dxf_pairs(text)
+
+    holes: list[dict[str, Any]] = []
+    linear_dims: list[dict[str, Any]] = []
+    hole_idx = 1
+    text_chunks: list[str] = []
+
+    i = 0
+    while i < len(pairs):
+        code, value = pairs[i]
+        if code == "0" and value == "CIRCLE":
+            handle = f"DXF_H{hole_idx}"
+            radius = None
+            j = i + 1
+            while j < len(pairs):
+                c, v = pairs[j]
+                if c == "0":
+                    break
+                if c == "5":
+                    handle = f"DXF_{v}"
+                elif c == "40":
+                    try:
+                        radius = float(v)
+                    except ValueError:
+                        pass
+                j += 1
+            if radius and radius > 0:
+                holes.append({"id": handle, "diameter_mm": round(radius * 2.0, 4)})
+                hole_idx += 1
+            i = j
+            continue
+
+        if code == "0" and value in {"TEXT", "MTEXT"}:
+            j = i + 1
+            while j < len(pairs):
+                c, v = pairs[j]
+                if c == "0":
+                    break
+                if c in {"1", "3"} and v:
+                    text_chunks.append(v)
+                j += 1
+            i = j
+            continue
+
+        i += 1
+
+    linear_dims.extend(_extract_dims_from_text("\n".join(text_chunks)))
+
+    if not holes and not linear_dims:
+        raise ValueError("DXF 中未提取到可用孔/尺寸信息；请改用结构化 JSON")
+
+    return {
+        "drawing_id": Path(filename).name,
+        "holes": holes,
+        "linear_dims": linear_dims,
+        "standard_notes": {"general_tolerance_standard": "ISO 2768-1", "general_tolerance_class": "m"},
+    }
+
+
+def _build_part_from_drawing(drawing: dict[str, Any]) -> dict[str, Any]:
+    holes = []
+    for h in drawing.get("holes", []):
+        d = float(h.get("diameter_mm", 0) or 0)
+        if d <= 0:
+            continue
+        holes.append({"id": str(h.get("id", f"H{len(holes)+1}")), "diameter_mm": d, "depth_mm": round(d * 2.0, 3)})
+
+    linear_dims = []
+    for d2d in drawing.get("linear_dims", []):
+        nominal = d2d.get("nominal_mm")
+        if nominal is None:
+            continue
+        linear_dims.append({"id": str(d2d.get("id", f"D{len(linear_dims)+1}")), "value_mm": float(nominal)})
+
+    return {
+        "part_id": drawing.get("drawing_id", "DRAWING_ONLY_REVIEW"),
+        "geometry": {
+            "holes": holes,
+            "linear_dims": linear_dims,
+            "min_wall_thickness_mm": 3.0,
+        },
+    }
 
 
 def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None = None, report_md: str = "") -> str:
@@ -94,16 +214,19 @@ def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None 
 <title>零件评审助手（公开标准）</title><style>{CSS}</style></head>
 <body><main class="container">
   <h1>零件评审助手（ISO 2768-1 / ISO 273）</h1>
-  <p>上传 3D/2D 结构化图纸 JSON，分析后直接在网页显示评审建议。</p>
+  <p>现在支持 2D 图纸直接评审（JSON 或 DXF）。3D 输入改为可选，不上传也能运行。</p>
   <section class="card tip">
     <strong>访问方式：</strong>请用 <code>http://localhost:8000</code> 或 <code>http://127.0.0.1:8000</code>，<b>不要输入 mvp 这种主机名</b>。
   </section>
+  <section class="card tip">
+    <strong>格式说明：</strong>2D 支持 <code>.json</code>/<code>.dxf</code>；<code>.dwg/.pdf</code> 请先转 JSON 或 DXF。
+  </section>
   <section class="card">
     <form action="/analyze" method="post" enctype="multipart/form-data">
-      <label>3D 结构化输入（必填）</label>
-      <input type="file" name="part_file" accept="application/json" required>
-      <label>2D 图纸结构化输入（必填）</label>
-      <input type="file" name="drawing_file" accept="application/json" required>
+      <label>2D 图纸输入（必填，JSON 或 DXF）</label>
+      <input type="file" name="drawing_file" accept="application/json,.dxf" required>
+      <label>3D 结构化输入（可选，JSON）</label>
+      <input type="file" name="part_file" accept="application/json">
       <label>标准配置（可选，不上传则使用内置 ISO 配置）</label>
       <input type="file" name="profile_file" accept="application/json">
       <button type="submit">开始分析</button>
@@ -146,24 +269,22 @@ class Handler(BaseHTTPRequestHandler):
         result: dict[str, Any] | None = None
         report_md = ""
 
-        def get_file_bytes(name: str) -> bytes | None:
+        def get_file(name: str) -> tuple[str, bytes | None]:
             item = form[name] if name in form else None
             if item is None or not getattr(item, "file", None):
-                return None
-            return item.file.read()
+                return "", None
+            return getattr(item, "filename", "") or "", item.file.read()
 
-        part_raw = get_file_bytes("part_file")
-        drawing_raw = get_file_bytes("drawing_file")
-        profile_raw = get_file_bytes("profile_file")
+        part_name, part_raw = get_file("part_file")
+        drawing_name, drawing_raw = get_file("drawing_file")
+        _, profile_raw = get_file("profile_file")
 
         part = drawing = profile = None
-        try:
-            part = _load_json_bytes(part_raw or b"")
-        except ValueError as exc:
-            errors.append(f"3D 输入错误: {exc}")
 
         try:
-            drawing = _load_json_bytes(drawing_raw or b"")
+            if not drawing_raw:
+                raise ValueError("请上传 2D 图纸文件")
+            drawing = _load_drawing_from_upload(drawing_name, drawing_raw)
         except ValueError as exc:
             errors.append(f"2D 输入错误: {exc}")
 
@@ -174,6 +295,14 @@ class Handler(BaseHTTPRequestHandler):
                 profile = json.loads(DEFAULT_PROFILE.read_text(encoding="utf-8"))
         except (ValueError, FileNotFoundError) as exc:
             errors.append(f"标准配置错误: {exc}")
+
+        if part_raw:
+            try:
+                part = _load_json_bytes(part_raw)
+            except ValueError as exc:
+                errors.append(f"3D 输入错误: {exc}")
+        elif drawing:
+            part = _build_part_from_drawing(drawing)
 
         if part and drawing and profile:
             hits = []
@@ -216,7 +345,7 @@ def main() -> None:
     print(f" - local: http://localhost:{args.port}")
     if args.host == "0.0.0.0":
         print(f" - lan:   http://{lan_ip}:{args.port}")
-    print("[TIP] 浏览器不要输入 mvp 作为网址，使用 localhost 或 127.0.0.1")
+    print("[TIP] 2D 支持 JSON/DXF，3D 为可选")
     server.serve_forever()
 
 

@@ -1,8 +1,23 @@
-# 最小闭环真实运行说明（公开规范版 + 网页）
+# 最小闭环真实运行说明（2D优先版）
 
-你可以把公开零件图纸（结构化 JSON）上传到网页，分析后直接在页面显示评审建议。
+现在不要求 3D 模型：你可以直接上传 **2D 图纸** 做评审。
 
-## 1) 使用的公开规范
+## 1) 当前支持的输入
+
+### 必填：2D 图纸
+- `.json`（结构化图纸）
+- `.dxf`（经典 CAD 交换格式，当前实现了最小可用解析）
+
+### 可选：3D
+- `.json`（如果上传，会做 2D/3D 一致性校核）
+- 不上传也能跑：系统会基于 2D 自动构造最小 3D 代理数据
+
+### 暂不直接支持
+- `.dwg` / `.pdf`（建议先转 DXF 或结构化 JSON）
+
+---
+
+## 2) 使用的公开规范
 - **ISO 2768-1**：一般线性尺寸公差（示例采用 `class m`）
 - **ISO 273**：公制螺栓间隙孔（示例采用 normal 系列）
 
@@ -10,19 +25,35 @@
 
 ---
 
-## 2) 输入格式
+## 3) 网页运行（推荐）
 
-### 3D 输入 JSON
-示例：`mvp/examples/public_part_3d.json`
+```bash
+python3 mvp/web_app.py
+```
 
-### 2D 图纸输入 JSON
-示例：`mvp/examples/public_drawing_2d.json`
+浏览器访问：
+- `http://localhost:8000`
+- `http://127.0.0.1:8000`
 
-> 当前 MVP 先接收结构化 JSON。你后续可在前端前面增加 OCR/图纸解析服务，将 PDF/DWG 转为此结构。
+> 如果你给同事演示：
+> ```bash
+> python3 mvp/web_app.py --host 0.0.0.0 --port 8000
+> ```
+> 然后同网段访问 `http://你的局域网IP:8000`。
 
 ---
 
-## 3) CLI 跑法（可选）
+## 4) 示例输入
+
+- 2D JSON：`mvp/examples/public_drawing_2d.json`
+- 2D DXF：`mvp/examples/public_drawing_2d_minimal.dxf`
+- 3D JSON（可选）：`mvp/examples/public_part_3d.json`
+
+---
+
+## 5) CLI 跑法（仍可用）
+
+如果你要走纯 JSON 的命令行模式：
 
 ```bash
 python3 mvp/min_loop.py \
@@ -35,60 +66,21 @@ python3 mvp/min_loop.py \
 
 ---
 
-## 4) 网页运行（推荐）
+## 6) 常见问题
 
-```bash
-python3 mvp/web_app.py
-```
+### Q: 一定要 JSON 吗？
+不是。网页已支持直接上传 `DXF`。JSON 只是最稳定的结构化接口。
 
-启动后会打印访问地址，默认请用：
-- `http://localhost:8000`
-- `http://127.0.0.1:8000`
+### Q: 我现在不想处理 3D，可以吗？
+可以。3D 输入是可选项，不上传也会输出评审建议。
 
-如果你要让同网段其它机器访问：
-```bash
-python3 mvp/web_app.py --host 0.0.0.0 --port 8000
-```
-然后在其它机器访问 `http://你的局域网IP:8000`。
+### Q: 访问报 `DNS_PROBE_FINISHED_NXDOMAIN`？
+你输入了无效主机名（例如 `mvp`）。请使用 `localhost` / `127.0.0.1` / 局域网 IP。
 
 ---
 
-## 5) 你这个报错（DNS_PROBE_FINISHED_NXDOMAIN）怎么处理
-
-你截图里是访问了 `mvp`，这是一个不存在的域名，所以浏览器报 DNS 错误。
-
-### 正确做法
-1. 先在项目目录启动服务：
-   ```bash
-   python3 mvp/web_app.py
-   ```
-2. 浏览器输入：
-   - `http://localhost:8000`
-   - 或 `http://127.0.0.1:8000`
-3. **不要输入 `mvp`**。
-
-### 若仍打不开
-- 检查服务是否启动成功（终端应显示 `[OK] web app running`）。
-- 若提示端口占用，换端口启动：
-  ```bash
-  python3 mvp/web_app.py --port 8010
-  ```
-  然后访问 `http://localhost:8010`。
-- 若跨机器访问，确认防火墙已放行该端口。
-
----
-
-## 6) 页面上传后会显示什么
+## 7) 页面输出
 - 评分与等级
 - 问题清单（规则、严重度、建议、证据）
 - 推荐工艺路径
-- 完整 Markdown 报告
-
----
-
-## 7) 当前规则
-- `DFM-HOLE-001`：孔深径比
-- `DFM-WALL-001`：最小壁厚
-- `ISO273-HOLE-001`：孔径是否符合 ISO 273 normal
-- `CONSISTENCY-2D3D-001`：2D/3D 孔径一致性
-- `ISO2768-LIN-001`：线性尺寸按 ISO 2768-1 class m 超差检查
+- Markdown 全报告
