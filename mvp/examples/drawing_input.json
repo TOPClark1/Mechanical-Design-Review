@@ -1,0 +1,12 @@
+{
+  "part_id": "BRACKET-001",
+  "dimensions": {
+    "holes": [
+      {"id": "H1", "diameter_mm": 5.0},
+      {"id": "H2", "diameter_mm": 8.0}
+    ]
+  },
+  "notes": [
+    "未注倒角 C0.5"
+  ]
+}
