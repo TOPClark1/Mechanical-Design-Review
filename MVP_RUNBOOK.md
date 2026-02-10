@@ -1,17 +1,45 @@
-# 最小闭环真实运行说明（可分享 + 邮箱注册）
+# 机械设计评审助手运行说明（GitHub + PDF）
 
-现在支持：**可分享访问 + 邮箱注册登录 + 2D 图纸评审（JSON/DXF/PDF实验）**。
+现在支持：**可分享访问 + 邮箱注册登录 + 2D 图纸评审（JSON / DXF / PDF）**。
 
-## 1) 你问的核心问题：邮箱注册需要域名吗？
+## 1) 你最关心的两个问题
 
-**不一定需要。**
+### Q1: 我的初始文件是 PDF，必须支持吗？
+支持。现在 2D 主分析入口已经支持 `.pdf` 上传。
 
-- 如果你只需要“用户用邮箱+密码注册登录”（不发送验证码邮件）：**不需要域名**，本系统已支持。
-- 如果你后续要“发送验证码/找回密码邮件”：建议用你自己的域名邮箱（或第三方邮件服务），这样送达率更稳。
+### Q2: 代码在 GitHub 上，我怎么跑起来？
+按下面 4 步走即可：克隆仓库 → 安装依赖 → 启动服务 → 浏览器访问。
 
 ---
 
-## 2) 本地启动
+## 2) 从 GitHub 拉代码
+
+```bash
+git clone <你的仓库地址>
+cd Mechanical-Design-Review
+```
+
+---
+
+## 3) 环境准备
+
+### 必备
+- Python 3.10+
+
+### PDF 支持必备（必须安装）
+本项目解析 PDF 依赖 `pdftotext`（poppler）：
+
+```bash
+# Ubuntu / Debian
+sudo apt-get update && sudo apt-get install -y poppler-utils
+
+# macOS
+brew install poppler
+```
+
+---
+
+## 4) 启动服务
 
 ```bash
 python3 mvp/web_app.py --host 0.0.0.0 --port 8000 --secret "replace-with-a-strong-secret"
@@ -25,79 +53,31 @@ python3 mvp/web_app.py --host 0.0.0.0 --port 8000 --secret "replace-with-a-stron
 
 ---
 
-## 3) 注册与登录
+## 5) 登录后怎么用
 
-1. 打开首页，先注册账号（邮箱+密码）
-2. 登录后进入评审工作台
-3. 在工作台内：
-   - 可先做 `DXF -> JSON` 转换
-   - 再做 2D 图纸评审（3D 可选）
-   - 或使用“二维 PDF 分析（实验）”板块
-
----
-
-## 4) 支持的图纸格式
-
-### 常规评审（JSON/DXF）
-- 2D 必填：`.json` / `.dxf`
-- 3D 可选：`.json`
-
-### 二维 PDF 分析（实验）
-- 2D 必填：`.pdf`
-- 3D 可选：`.json`
-
-### 暂不直接支持
-- `.dwg`（建议先转 DXF 或 JSON）
+1. 先注册账号（邮箱+密码）
+2. 登录进入评审工作台
+3. 在“评审分析（JSON/DXF/PDF）”里上传 2D 图纸：
+   - 支持 `.json` / `.dxf` / `.pdf`
+4. 可选再上传 3D `.json`
+5. 点击“开始分析”查看评分、问题清单与工艺建议
 
 ---
 
-## 5) 内置 DXF 转 JSON
+## 6) 分享给别人使用
 
-### 网页方式（推荐）
-登录后使用“先转换：DXF → JSON（内置）”表单。
+如果你部署在云服务器并放通 8000 端口，别人可以直接访问：
 
-### 命令行方式
-```bash
-python3 mvp/dxf_to_json.py \
-  --in-dxf mvp/examples/public_drawing_2d_minimal.dxf \
-  --out-json mvp/output/converted_from_dxf.json
-```
+`http://服务器IP:8000`
+
+没有域名也能先跑和分享；后续要 HTTPS 或邮件验证码再加域名。
 
 ---
 
-## 6) 二维 PDF 分析（实验）
-
-网页登录后使用“二维 PDF 分析（实验）”表单上传 `.pdf`。
-
-> 当前实现依赖 `pdftotext`（poppler）提取尺寸文本。
-
-安装示例：
-```bash
-# Ubuntu/Debian
-sudo apt-get update && sudo apt-get install -y poppler-utils
-
-# macOS
-brew install poppler
-```
-
-若未安装，会在页面提示“未安装 pdftotext（poppler）”。
-
----
-
-## 7) 分享给别人用
-
-你可以把服务部署到云主机，并开放 8000 端口；别人用 `http://服务器IP:8000` 访问即可。
-
-如果你暂时没有域名，也可以先用 IP 分享。后续需要 HTTPS/正式邮件服务时，再加域名。
-
----
-
-## 8) 合并冲突自检
-
-在提交或发起 PR 前，先运行：
+## 7) 合并冲突自检（建议每次提交前）
 
 ```bash
 ./scripts/check_conflicts.sh
 ```
 
-如果输出 `[OK] No unresolved conflict markers found in tracked files.`，说明冲突标记已清理干净。
+若输出 `[OK] No unresolved conflict markers found in tracked files.`，表示无冲突标记残留。

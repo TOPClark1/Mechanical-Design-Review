@@ -268,7 +268,9 @@ def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
         return _load_json_bytes(raw)
     if ext == ".dxf":
         return parse_dxf_to_drawing(filename, raw)
-    raise ValueError("仅支持 JSON 或 DXF（PDF 请走下方‘二维 PDF 分析’）")
+    if ext == ".pdf":
+        return parse_pdf_to_drawing(filename, raw)
+    raise ValueError("仅支持 JSON / DXF / PDF")
 
 
 
@@ -393,27 +395,27 @@ def _dashboard_page(
 <div><h1>零件评审助手（可分享 + 邮箱注册）</h1><p>2D图纸必填（JSON/DXF），3D可选。</p></div>
 <div class='inline'><code>{html.escape(user_email)}</code><form method='post' action='/logout'><button type='submit'>退出登录</button></form></div>
 </section>
-<section class='card tip'><strong>格式说明：</strong>2D 支持 .json/.dxf；新增“二维 PDF 分析（实验）”板块。若做真实邮箱验证码邮件发送，建议使用你自己的域名邮箱。</section>
+<section class='card tip'><strong>格式说明：</strong>2D 支持 .json/.dxf/.pdf（PDF 已正式支持）。若做真实邮箱验证码邮件发送，建议使用你自己的域名邮箱。</section>
 
 <section class='card'><h2>先转换：DXF → JSON（内置）</h2>
 <form method='post' action='/convert-dxf' enctype='multipart/form-data'>
 <label>上传 DXF</label><input type='file' name='dxf_file' accept='.dxf' required>
 <button type='submit'>转换为 JSON</button></form></section>
 
-<section class='card'><h2>评审分析（JSON/DXF）</h2>
+<section class='card'><h2>评审分析（JSON/DXF/PDF）</h2>
 <form method='post' action='/analyze' enctype='multipart/form-data'>
-<label>2D图纸（必填，JSON或DXF）</label><input type='file' name='drawing_file' accept='application/json,.dxf' required>
+<label>2D图纸（必填，JSON/DXF/PDF）</label><input type='file' name='drawing_file' accept='application/json,.dxf,application/pdf,.pdf' required>
 <label>3D结构化输入（可选，JSON）</label><input type='file' name='part_file' accept='application/json'>
 <label>标准配置（可选）</label><input type='file' name='profile_file' accept='application/json'>
 <button type='submit'>开始分析</button></form></section>
 
-<section class='card'><h2>二维 PDF 分析（实验）</h2>
+<section class='card'><h2>二维 PDF 分析</h2>
 <form method='post' action='/analyze-pdf' enctype='multipart/form-data'>
 <label>2D PDF 图纸（必填）</label><input type='file' name='pdf_file' accept='application/pdf,.pdf' required>
 <label>3D结构化输入（可选，JSON）</label><input type='file' name='part_file' accept='application/json'>
 <label>标准配置（可选）</label><input type='file' name='profile_file' accept='application/json'>
 <button type='submit'>PDF 开始分析</button></form>
-<p><small>说明：该实验版通过文本提取做最小闭环，不适合复杂标注；建议优先 DXF/JSON。</small></p></section>
+<p><small>说明：PDF 通过文本提取进行分析；复杂图纸建议同时提供 DXF/JSON 提升准确性。</small></p></section>
 
 {ok_html}{err_html}{convert_html}{result_html}
 </main></body></html>"""
@@ -636,7 +638,7 @@ def main() -> None:
     print(f" - local: http://localhost:{args.port}")
     if args.host == "0.0.0.0":
         print(f" - lan:   http://{lan_ip}:{args.port}")
-    print("[TIP] 已启用邮箱注册/登录；2D 支持 JSON/DXF")
+    print("[TIP] 已启用邮箱注册/登录；2D 支持 JSON/DXF/PDF")
     server.serve_forever()
 
 
