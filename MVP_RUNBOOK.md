@@ -6,7 +6,7 @@
 
 ### 必填：2D 图纸
 - `.json`（结构化图纸）
-- `.dxf`（经典 CAD 交换格式，当前实现了最小可用解析）
+- `.dxf`（经典 CAD 交换格式，已内置最小转换能力）
 
 ### 可选：3D
 - `.json`（如果上传，会做 2D/3D 一致性校核）
@@ -17,15 +17,7 @@
 
 ---
 
-## 2) 使用的公开规范
-- **ISO 2768-1**：一般线性尺寸公差（示例采用 `class m`）
-- **ISO 273**：公制螺栓间隙孔（示例采用 normal 系列）
-
-规范配置：`mvp/standards/iso_profile_public.json`
-
----
-
-## 3) 网页运行（推荐）
+## 2) 网页运行
 
 ```bash
 python3 mvp/web_app.py
@@ -35,15 +27,38 @@ python3 mvp/web_app.py
 - `http://localhost:8000`
 - `http://127.0.0.1:8000`
 
-> 如果你给同事演示：
-> ```bash
-> python3 mvp/web_app.py --host 0.0.0.0 --port 8000
-> ```
-> 然后同网段访问 `http://你的局域网IP:8000`。
+---
+
+## 3) 内置工具：DXF 转 JSON
+
+### 方式 A：网页内转换（推荐）
+首页有“**先转换：DXF → JSON（内置）**”表单，上传 DXF 后页面会直接显示结构化 JSON，可复制保存。
+
+### 方式 B：命令行转换
+```bash
+python3 mvp/dxf_to_json.py \
+  --in-dxf mvp/examples/public_drawing_2d_minimal.dxf \
+  --out-json mvp/output/converted_from_dxf.json
+```
 
 ---
 
-## 4) 示例输入
+## 4) 网页评审（2D-only）
+
+在“评审分析”表单中：
+1. 上传 2D（JSON 或 DXF）
+2. 3D 可不传
+3. 点击“开始分析”
+
+页面会输出：
+- 评分与等级
+- 问题清单
+- 推荐工艺路径
+- Markdown 全报告
+
+---
+
+## 5) 示例输入
 
 - 2D JSON：`mvp/examples/public_drawing_2d.json`
 - 2D DXF：`mvp/examples/public_drawing_2d_minimal.dxf`
@@ -51,36 +66,12 @@ python3 mvp/web_app.py
 
 ---
 
-## 5) CLI 跑法（仍可用）
-
-如果你要走纯 JSON 的命令行模式：
-
-```bash
-python3 mvp/min_loop.py \
-  --part mvp/examples/public_part_3d.json \
-  --drawing mvp/examples/public_drawing_2d.json \
-  --profile mvp/standards/iso_profile_public.json \
-  --out-md mvp/output/public_review_report.md \
-  --out-json mvp/output/public_review_result.json
-```
-
----
-
 ## 6) 常见问题
 
+### Q: 没办法看到结果？
+- 确认访问的是：`localhost:8000`（不是 `mvp`）
+- 上传后页面下方会显示“评审总览 / 问题清单”
+- 若只想先确认 DXF 能否读取，先用“DXF → JSON”转换表单
+
 ### Q: 一定要 JSON 吗？
-不是。网页已支持直接上传 `DXF`。JSON 只是最稳定的结构化接口。
-
-### Q: 我现在不想处理 3D，可以吗？
-可以。3D 输入是可选项，不上传也会输出评审建议。
-
-### Q: 访问报 `DNS_PROBE_FINISHED_NXDOMAIN`？
-你输入了无效主机名（例如 `mvp`）。请使用 `localhost` / `127.0.0.1` / 局域网 IP。
-
----
-
-## 7) 页面输出
-- 评分与等级
-- 问题清单（规则、严重度、建议、证据）
-- 推荐工艺路径
-- Markdown 全报告
+不是。现在网页支持直接上传 DXF，也有内置 DXF→JSON 工具。

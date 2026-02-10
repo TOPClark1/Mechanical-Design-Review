@@ -20,7 +20,6 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8000
 DEFAULT_PROFILE = Path("mvp/standards/iso_profile_public.json")
 
-
 CSS = """
 body { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; background:#f3f4f6; margin:0; padding:24px; }
 .container { max-width: 920px; margin:0 auto; }
@@ -28,9 +27,10 @@ body { font-family: Arial, 'PingFang SC', 'Microsoft YaHei', sans-serif; backgro
 .error { border-left:4px solid #dc2626; }
 .tip { border-left:4px solid #2563eb; }
 form { display:grid; gap:10px; }
-button { width:140px; padding:10px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; }
-pre { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; }
+button { width:220px; padding:10px; border:none; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer; }
+pre { white-space: pre-wrap; background:#f9fafb; padding:10px; border-radius:8px; overflow:auto; }
 code { font-size: 0.9em; }
+a { color:#2563eb; }
 """
 
 
@@ -69,27 +69,19 @@ def _extract_dims_from_text(text: str) -> list[dict[str, Any]]:
     return dims
 
 
-def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
-    ext = Path(filename or "").suffix.lower()
-    if ext == ".json" or not ext:
-        return _load_json_bytes(raw)
-
-    if ext != ".dxf":
-        raise ValueError("仅支持 JSON 或 DXF（当前不直接解析 PDF/DWG）")
-
+def parse_dxf_to_drawing(filename: str, raw: bytes) -> dict[str, Any]:
     text = raw.decode("utf-8", errors="ignore")
     pairs = _parse_dxf_pairs(text)
 
     holes: list[dict[str, Any]] = []
     linear_dims: list[dict[str, Any]] = []
-    hole_idx = 1
     text_chunks: list[str] = []
 
     i = 0
     while i < len(pairs):
         code, value = pairs[i]
         if code == "0" and value == "CIRCLE":
-            handle = f"DXF_H{hole_idx}"
+            handle = f"DXF_H{len(holes)+1}"
             radius = None
             j = i + 1
             while j < len(pairs):
@@ -106,7 +98,6 @@ def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
                 j += 1
             if radius and radius > 0:
                 holes.append({"id": handle, "diameter_mm": round(radius * 2.0, 4)})
-                hole_idx += 1
             i = j
             continue
 
@@ -125,7 +116,6 @@ def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
         i += 1
 
     linear_dims.extend(_extract_dims_from_text("\n".join(text_chunks)))
-
     if not holes and not linear_dims:
         raise ValueError("DXF 中未提取到可用孔/尺寸信息；请改用结构化 JSON")
 
@@ -135,6 +125,15 @@ def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
         "linear_dims": linear_dims,
         "standard_notes": {"general_tolerance_standard": "ISO 2768-1", "general_tolerance_class": "m"},
     }
+
+
+def _load_drawing_from_upload(filename: str, raw: bytes) -> dict[str, Any]:
+    ext = Path(filename or "").suffix.lower()
+    if ext == ".json" or not ext:
+        return _load_json_bytes(raw)
+    if ext == ".dxf":
+        return parse_dxf_to_drawing(filename, raw)
+    raise ValueError("仅支持 JSON 或 DXF（当前不直接解析 PDF/DWG）")
 
 
 def _build_part_from_drawing(drawing: dict[str, Any]) -> dict[str, Any]:
@@ -154,19 +153,32 @@ def _build_part_from_drawing(drawing: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "part_id": drawing.get("drawing_id", "DRAWING_ONLY_REVIEW"),
-        "geometry": {
-            "holes": holes,
-            "linear_dims": linear_dims,
-            "min_wall_thickness_mm": 3.0,
-        },
+        "geometry": {"holes": holes, "linear_dims": linear_dims, "min_wall_thickness_mm": 3.0},
     }
 
 
-def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None = None, report_md: str = "") -> str:
+def _render_page(
+    errors: list[str] | None = None,
+    result: dict[str, Any] | None = None,
+    report_md: str = "",
+    converted_drawing: dict[str, Any] | None = None,
+) -> str:
     err_html = ""
     if errors:
         items = "".join(f"<li>{html.escape(e)}</li>" for e in errors)
         err_html = f'<section class="card error"><h2>输入错误</h2><ul>{items}</ul></section>'
+
+    convert_html = ""
+    if converted_drawing:
+        payload = json.dumps(converted_drawing, ensure_ascii=False, indent=2)
+        payload_esc = html.escape(payload)
+        convert_html = f"""
+<section class="card">
+  <h2>DXF 转 JSON 结果</h2>
+  <p>已成功提取结构化 2D 数据，你可以复制到本地保存为 <code>drawing.json</code>。</p>
+  <pre>{payload_esc}</pre>
+</section>
+"""
 
     result_html = ""
     if result:
@@ -185,28 +197,17 @@ def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None 
             hits_html = "<ol>" + "".join(lines) + "</ol>"
 
         process_html = "<ol>" + "".join(f"<li>{html.escape(s)}</li>" for s in result.get("recommended_process", [])) + "</ol>"
-
         result_html = f"""
-<section class="card">
-  <h2>评审总览</h2>
+<section class="card"><h2>评审总览</h2>
   <p><strong>零件：</strong>{html.escape(str(result['part_id']))}</p>
   <p><strong>评分：</strong>{result['summary']['score']} / 100</p>
   <p><strong>等级：</strong>{html.escape(result['summary']['grade'])}</p>
   <p><strong>结论：</strong>{html.escape(result['summary']['decision'])}</p>
   <p><strong>命中：</strong>{result['summary']['hit_count']}（高风险 {result['summary']['high_risk_count']}）</p>
 </section>
-<section class="card">
-  <h2>问题清单</h2>
-  {hits_html}
-</section>
-<section class="card">
-  <h2>推荐工艺路径</h2>
-  {process_html}
-</section>
-<section class="card">
-  <h2>完整报告（Markdown）</h2>
-  <pre>{html.escape(report_md)}</pre>
-</section>
+<section class="card"><h2>问题清单</h2>{hits_html}</section>
+<section class="card"><h2>推荐工艺路径</h2>{process_html}</section>
+<section class="card"><h2>完整报告（Markdown）</h2><pre>{html.escape(report_md)}</pre></section>
 """
 
     return f"""<!doctype html>
@@ -214,14 +215,20 @@ def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None 
 <title>零件评审助手（公开标准）</title><style>{CSS}</style></head>
 <body><main class="container">
   <h1>零件评审助手（ISO 2768-1 / ISO 273）</h1>
-  <p>现在支持 2D 图纸直接评审（JSON 或 DXF）。3D 输入改为可选，不上传也能运行。</p>
-  <section class="card tip">
-    <strong>访问方式：</strong>请用 <code>http://localhost:8000</code> 或 <code>http://127.0.0.1:8000</code>，<b>不要输入 mvp 这种主机名</b>。
-  </section>
-  <section class="card tip">
-    <strong>格式说明：</strong>2D 支持 <code>.json</code>/<code>.dxf</code>；<code>.dwg/.pdf</code> 请先转 JSON 或 DXF。
-  </section>
+  <p>2D 图纸必填（JSON 或 DXF），3D 输入可选。</p>
+  <section class="card tip"><strong>格式说明：</strong>2D 支持 <code>.json</code>/<code>.dxf</code>；<code>.dwg/.pdf</code> 请先转 DXF 或 JSON。</section>
+
   <section class="card">
+    <h2>先转换：DXF → JSON（内置）</h2>
+    <form action="/convert-dxf" method="post" enctype="multipart/form-data">
+      <label>上传 DXF</label>
+      <input type="file" name="dxf_file" accept=".dxf" required>
+      <button type="submit">转换为 JSON</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h2>评审分析</h2>
     <form action="/analyze" method="post" enctype="multipart/form-data">
       <label>2D 图纸输入（必填，JSON 或 DXF）</label>
       <input type="file" name="drawing_file" accept="application/json,.dxf" required>
@@ -232,7 +239,9 @@ def _render_page(errors: list[str] | None = None, result: dict[str, Any] | None 
       <button type="submit">开始分析</button>
     </form>
   </section>
+
   {err_html}
+  {convert_html}
   {result_html}
 </main></body></html>"""
 
@@ -255,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_html("<h1>404</h1>", status=404)
 
     def do_POST(self) -> None:  # noqa: N802
-        if self.path != "/analyze":
+        if self.path not in {"/analyze", "/convert-dxf"}:
             self._send_html("<h1>404</h1>", status=404)
             return
 
@@ -265,15 +274,30 @@ class Handler(BaseHTTPRequestHandler):
             environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": self.headers.get("Content-Type", "")},
         )
 
-        errors: list[str] = []
-        result: dict[str, Any] | None = None
-        report_md = ""
-
         def get_file(name: str) -> tuple[str, bytes | None]:
             item = form[name] if name in form else None
             if item is None or not getattr(item, "file", None):
                 return "", None
             return getattr(item, "filename", "") or "", item.file.read()
+
+        if self.path == "/convert-dxf":
+            errors: list[str] = []
+            converted = None
+            filename, raw = get_file("dxf_file")
+            try:
+                if not raw:
+                    raise ValueError("请上传 DXF 文件")
+                if Path(filename).suffix.lower() != ".dxf":
+                    raise ValueError("请上传 .dxf 文件")
+                converted = parse_dxf_to_drawing(filename, raw)
+            except ValueError as exc:
+                errors.append(f"DXF 转换失败: {exc}")
+            self._send_html(_render_page(errors=errors, converted_drawing=converted))
+            return
+
+        errors: list[str] = []
+        result: dict[str, Any] | None = None
+        report_md = ""
 
         part_name, part_raw = get_file("part_file")
         drawing_name, drawing_raw = get_file("drawing_file")
@@ -345,7 +369,7 @@ def main() -> None:
     print(f" - local: http://localhost:{args.port}")
     if args.host == "0.0.0.0":
         print(f" - lan:   http://{lan_ip}:{args.port}")
-    print("[TIP] 2D 支持 JSON/DXF，3D 为可选")
+    print("[TIP] 2D 支持 JSON/DXF，3D 可选")
     server.serve_forever()
 
 
